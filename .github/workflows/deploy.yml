@@ -1,0 +1,106 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+      
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+    
+    - name: Install backend dependencies
+      working-directory: ./server
+      run: npm ci
+    
+    - name: Run backend tests
+      working-directory: ./server
+      run: npm test
+      env:
+        NODE_ENV: test
+        MONGODB_URI: mongodb://localhost:27017/geophoto_test
+    
+    - name: Install frontend dependencies
+      working-directory: ./client
+      run: npm ci
+    
+    - name: Run frontend tests
+      working-directory: ./client
+      run: npm test -- --watchAll=false
+    
+    - name: Build frontend
+      working-directory: ./client
+      run: npm run build
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push backend
+      uses: docker/build-push-action@v4
+      with:
+        context: ./server
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/geophoto-backend:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build and push frontend
+      uses: docker/build-push-action@v4
+      with:
+        context: ./client
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/geophoto-frontend:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: ${{ secrets.DEPLOY_HOST }}
+        username: ${{ secrets.DEPLOY_USER }}
+        key: ${{ secrets.DEPLOY_KEY }}
+        script: |
+          cd /opt/geophoto
+          docker-compose pull
+          docker-compose up -d
+          docker system prune -f
