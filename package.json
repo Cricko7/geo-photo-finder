@@ -1,0 +1,25 @@
+{
+  "name": "geo-photo-finder",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "setup": "npm run setup:backend && npm run setup:frontend",
+    "setup:backend": "cd server && npm install",
+    "setup:frontend": "cd client && npm install",
+    "generate-lock": "./scripts/generate-lockfiles.sh",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd server && npm run dev",
+    "dev:frontend": "cd client && npm start",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd server && npm test",
+    "test:frontend": "cd client && npm test -- --watchAll=false",
+    "build": "npm run build:frontend",
+    "build:frontend": "cd client && npm run build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.1"
+  }
+}
