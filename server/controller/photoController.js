@@ -4,7 +4,6 @@ const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
 const sharp = require('sharp');
-const ollamaService = require('../services/ollamaService');
 const logger = require('../utils/logger');
 
 // Настройка multer для загрузки файлов
@@ -51,7 +50,12 @@ exports.uploadPhoto = async (req, res, next) => {
       }
       
       // Извлечение EXIF данных
-      const exifData = await exifr.parse(req.file.path);
+      let exifData = null;
+      try {
+        exifData = await exifr.parse(req.file.path);
+      } catch (exifError) {
+        logger.warn('Could not parse EXIF data:', exifError);
+      }
       
       let location = null;
       let gpsData = null;
@@ -72,28 +76,20 @@ exports.uploadPhoto = async (req, res, next) => {
       }
       
       // Оптимизация изображения
-      const optimizedPath = req.file.path.replace(/\.\w+$/, '_optimized.jpg');
-      await sharp(req.file.path)
-        .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toFile(optimizedPath);
-      
-      // AI анализ через ollama
-      let aiAnalysis = null;
-      if (process.env.ENABLE_AI_ANALYSIS === 'true') {
-        try {
-          const imageBuffer = await sharp(req.file.path).toBuffer();
-          const analysis = await ollamaService.analyzeImage(imageBuffer);
-          aiAnalysis = {
-            description: analysis.description,
-            objects: analysis.objects,
-            scene: analysis.scene,
-            confidence: analysis.confidence,
-            analyzedAt: analysis.analyzedAt
-          };
-        } catch (aiError) {
-          logger.error('AI analysis failed:', aiError);
+      let optimizedPath = req.file.path;
+      try {
+        optimizedPath = req.file.path.replace(/\.\w+$/, '_optimized.jpg');
+        await sharp(req.file.path)
+          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toFile(optimizedPath);
+        
+        // Удаляем оригинал если он отличается
+        if (optimizedPath !== req.file.path) {
+          fs.unlinkSync(req.file.path);
         }
+      } catch (sharpError) {
+        logger.error('Image optimization failed:', sharpError);
       }
       
       // Создание записи в БД
@@ -114,8 +110,7 @@ exports.uploadPhoto = async (req, res, next) => {
           iso: exifData?.ISO,
           exposureTime: exifData?.ExposureTime,
           aperture: exifData?.ApertureValue
-        },
-        aiAnalysis: aiAnalysis
+        }
       });
       
       await photo.save();
@@ -138,6 +133,10 @@ exports.uploadPhoto = async (req, res, next) => {
 exports.findPhotosByLocation = async (req, res, next) => {
   try {
     const { lat, lng, radius = 1000 } = req.query;
+    
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Latitude and longitude required' });
+    }
     
     const photos = await Photo.find({
       location: {
@@ -186,6 +185,54 @@ exports.getUserPhotos = async (req, res, next) => {
         pages: Math.ceil(total / limit)
       }
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Получение фото по ID
+exports.getPhotoById = async (req, res, next) => {
+  try {
+    const photo = await Photo.findOne({
+      _id: req.params.id,
+      userId: req.user.id
+    });
+    
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    
+    // Увеличиваем счетчик просмотров
+    photo.views += 1;
+    await photo.save();
+    
+    res.json({ success: true, data: photo });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Удаление фото
+exports.deletePhoto = async (req, res, next) => {
+  try {
+    const photo = await Photo.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.id
+    });
+    
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    
+    // Удаляем файл
+    if (fs.existsSync(photo.path)) {
+      fs.unlinkSync(photo.path);
+    }
+    
+    // Обновляем статистику пользователя
+    await req.user.updateOne({ $inc: { 'stats.totalPhotos': -1 } });
+    
+    res.json({ success: true, message: 'Photo deleted' });
   } catch (error) {
     next(error);
   }
