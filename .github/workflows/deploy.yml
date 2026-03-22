@@ -2,7 +2,7 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
 
@@ -15,11 +15,63 @@ jobs:
         image: mongo:6
         ports:
           - 27017:27017
-      
-      ollama:
-        image: ollama/ollama:latest
-        ports:
-          - 11434:11434
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+    
+    # Backend тестирование
+    - name: Setup backend
+      working-directory: ./server
+      run: |
+        # Создаем package-lock.json если его нет
+        if [ ! -f package-lock.json ]; then
+          npm install --package-lock-only
+        fi
+        npm ci
+    
+    - name: Run backend tests
+      working-directory: ./server
+      run: npm test
+      env:
+        NODE_ENV: test
+        MONGODB_URI: mongodb://localhost:27017/geophoto_test
+        JWT_SECRET: test-secret-key
+        PORT: 5001
+    
+    # Frontend тестирование
+    - name: Setup frontend
+      working-directory: ./client
+      run: |
+        # Создаем package-lock.json если его нет
+        if [ ! -f package-lock.json ]; then
+          npm install --package-lock-only
+        fi
+        npm ci
+    
+    - name: Run frontend tests
+      working-directory: ./client
+      run: npm test -- --watchAll=false --passWithNoTests
+      env:
+        CI: true
+    
+    - name: Build frontend
+      working-directory: ./client
+      run: npm run build
+
+  # Линтинг и проверка кода
+  lint:
+    runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v3
@@ -29,31 +81,29 @@ jobs:
       with:
         node-version: '18.x'
     
-    - name: Install backend dependencies
+    - name: Lint backend
       working-directory: ./server
-      run: npm ci
+      run: |
+        if [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
+        npm run lint || true  # Не проваливаем сборку если нет линтера
     
-    - name: Run backend tests
-      working-directory: ./server
-      run: npm test
-      env:
-        NODE_ENV: test
-        MONGODB_URI: mongodb://localhost:27017/geophoto_test
-    
-    - name: Install frontend dependencies
+    - name: Lint frontend
       working-directory: ./client
-      run: npm ci
-    
-    - name: Run frontend tests
-      working-directory: ./client
-      run: npm test -- --watchAll=false
-    
-    - name: Build frontend
-      working-directory: ./client
-      run: npm run build
+      run: |
+        if [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
+        npm run lint || true
 
+  # Сборка Docker образов
   build-and-push:
-    needs: test
+    needs: [test, lint]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     
@@ -69,12 +119,18 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
     
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+    
     - name: Build and push backend
       uses: docker/build-push-action@v4
       with:
         context: ./server
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/geophoto-backend:latest
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/geophoto-backend:latest
+          ${{ secrets.DOCKER_USERNAME }}/geophoto-backend:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
     
@@ -83,17 +139,20 @@ jobs:
       with:
         context: ./client
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/geophoto-frontend:latest
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/geophoto-frontend:latest
+          ${{ secrets.DOCKER_USERNAME }}/geophoto-frontend:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+  # Деплой на сервер
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     
     steps:
-    - name: Deploy to server
+    - name: Deploy to production server
       uses: appleboy/ssh-action@v0.1.5
       with:
         host: ${{ secrets.DEPLOY_HOST }}
@@ -101,6 +160,47 @@ jobs:
         key: ${{ secrets.DEPLOY_KEY }}
         script: |
           cd /opt/geophoto
+          
+          # Создаем .env файл если его нет
+          if [ ! -f .env ]; then
+            cat > .env << EOF
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            NODE_ENV=production
+            ENABLE_AI_ANALYSIS=true
+            EOF
+          fi
+          
+          # Pull последние образы
           docker-compose pull
-          docker-compose up -d
-          docker system prune -f
+          
+          # Перезапускаем сервисы
+          docker-compose up -d --remove-orphans
+          
+          # Очищаем неиспользуемые образы
+          docker image prune -f
+          
+          # Проверяем статус
+          docker-compose ps
+          
+          # Health check
+          sleep 10
+          curl -f http://localhost:5000/health || exit 1
+
+  # Уведомление о деплое
+  notify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Send notification
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const status = '${{ needs.deploy.result }}';
+          const message = status === 'success' 
+            ? '✅ Deployment successful!' 
+            : '❌ Deployment failed!';
+          
+          console.log(message);

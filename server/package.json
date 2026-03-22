@@ -1,11 +1,20 @@
 {
   "name": "geo-photo-finder-server",
   "version": "1.0.0",
+  "description": "Geo Photo Finder Backend API",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest"
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write ."
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -20,11 +29,28 @@
     "bcryptjs": "^2.4.3",
     "express-rate-limit": "^6.10.0",
     "helmet": "^7.0.0",
-    "winston": "^3.10.0"
+    "winston": "^3.10.0",
+    "express-validator": "^7.0.1",
+    "compression": "^1.7.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.1",
     "jest": "^29.6.4",
-    "supertest": "^6.3.3"
+    "supertest": "^6.3.3",
+    "@types/jest": "^29.5.4",
+    "eslint": "^8.49.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.28.1",
+    "prettier": "^3.0.3"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coveragePathIgnorePatterns": [
+      "/node_modules/"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.js",
+      "**/?(*.)+(spec|test).js"
+    ]
   }
 }
