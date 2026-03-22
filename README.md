@@ -1,4 +1,7 @@
 # geo-photo-finder
+
+![iconnn](images\seo-map-location-place-search.svg)
+
 ## Open Source instrument for searching places over the world
 ### Инструмент для поиска мест по всему миру с открытым исходным кодом
 
