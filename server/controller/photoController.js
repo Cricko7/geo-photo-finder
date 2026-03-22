@@ -4,7 +4,6 @@ const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
 const sharp = require('sharp');
-const logger = require('../utils/logger');
 
 // Настройка multer для загрузки файлов
 const storage = multer.diskStorage({
@@ -38,23 +37,23 @@ const upload = multer({
 }).single('photo');
 
 // Загрузка фото
-exports.uploadPhoto = async (req, res, next) => {
-  try {
-    upload(req, res, async (err) => {
-      if (err) {
-        return res.status(400).json({ error: err.message });
-      }
-      
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-      
+exports.uploadPhoto = (req, res, next) => {
+  upload(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    try {
       // Извлечение EXIF данных
       let exifData = null;
       try {
         exifData = await exifr.parse(req.file.path);
       } catch (exifError) {
-        logger.warn('Could not parse EXIF data:', exifError);
+        console.warn('Could not parse EXIF data:', exifError.message);
       }
       
       let location = null;
@@ -85,11 +84,11 @@ exports.uploadPhoto = async (req, res, next) => {
           .toFile(optimizedPath);
         
         // Удаляем оригинал если он отличается
-        if (optimizedPath !== req.file.path) {
+        if (optimizedPath !== req.file.path && fs.existsSync(req.file.path)) {
           fs.unlinkSync(req.file.path);
         }
       } catch (sharpError) {
-        logger.error('Image optimization failed:', sharpError);
+        console.error('Image optimization failed:', sharpError.message);
       }
       
       // Создание записи в БД
@@ -99,7 +98,7 @@ exports.uploadPhoto = async (req, res, next) => {
         originalName: req.file.originalname,
         path: optimizedPath,
         mimeType: 'image/jpeg',
-        size: fs.statSync(optimizedPath).size,
+        size: fs.existsSync(optimizedPath) ? fs.statSync(optimizedPath).size : 0,
         location: location,
         gpsData: gpsData,
         metadata: {
@@ -116,17 +115,19 @@ exports.uploadPhoto = async (req, res, next) => {
       await photo.save();
       
       // Обновление статистики пользователя
-      await req.user.updateOne({ $inc: { 'stats.totalPhotos': 1 } });
+      if (req.user && req.user.updateOne) {
+        await req.user.updateOne({ $inc: { 'stats.totalPhotos': 1 } });
+      }
       
       res.status(201).json({
         success: true,
         data: photo,
         message: 'Photo uploaded successfully'
       });
-    });
-  } catch (error) {
-    next(error);
-  }
+    } catch (error) {
+      next(error);
+    }
+  });
 };
 
 // Поиск фото по геолокации
@@ -230,7 +231,9 @@ exports.deletePhoto = async (req, res, next) => {
     }
     
     // Обновляем статистику пользователя
-    await req.user.updateOne({ $inc: { 'stats.totalPhotos': -1 } });
+    if (req.user && req.user.updateOne) {
+      await req.user.updateOne({ $inc: { 'stats.totalPhotos': -1 } });
+    }
     
     res.json({ success: true, message: 'Photo deleted' });
   } catch (error) {

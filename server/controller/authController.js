@@ -4,7 +4,7 @@ const { validationResult } = require('express-validator');
 
 // Генерация JWT токена
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'default-secret-key', { expiresIn: '30d' });
 };
 
 // Регистрация
@@ -94,7 +94,7 @@ exports.getMe = async (req, res, next) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default-secret-key');
     const user = await User.findById(decoded.id).select('-password');
     
     if (!user) {

@@ -1,7 +1,5 @@
-const logger = require('../utils/logger');
-
 module.exports = (err, req, res, next) => {
-  logger.error(err.stack);
+  console.error(err.stack);
   
   // Ошибки валидации Mongoose
   if (err.name === 'ValidationError') {
