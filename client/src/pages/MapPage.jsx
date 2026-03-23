@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Box, Typography, CircularProgress, Alert, Paper, Button, Slider, Chip } from '@mui/material';
 import { MyLocation } from '@mui/icons-material';
 import PhotoMap from '../components/PhotoMap';
-
+// остальной код без изменений
 const API_URL = process.env.REACT_APP_API_URL || 'http://194.87.43.20:5000/api';
 
 const MapPage = () => {

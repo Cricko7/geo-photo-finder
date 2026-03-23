@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from 'react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppBar, Toolbar, Typography, Button, Container, Box } from '@mui/material';
 import PhotoUpload from './components/PhotoUpload';
 import MapPage from './pages/MapPage';
@@ -19,6 +19,14 @@ function HomePage() {
       <Typography variant="body1" sx={{ mt: 4, maxWidth: 600, mx: 'auto' }}>
         Загружайте фото с GPS координатами и смотрите где они были сделаны на карте
       </Typography>
+      <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
+        <Button component={Link} to="/upload" variant="contained" size="large">
+          Загрузить фото
+        </Button>
+        <Button component={Link} to="/map" variant="outlined" size="large">
+          Смотреть карту
+        </Button>
+      </Box>
     </Box>
   );
 }
