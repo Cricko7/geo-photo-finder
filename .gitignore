@@ -36,3 +36,4 @@ coverage/
 # Исключения (файлы которые нужно сохранить)
 !client/nginx.conf
 !server/.env.example
+!client/.dockerignore

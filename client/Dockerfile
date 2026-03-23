@@ -5,10 +5,18 @@ WORKDIR /app
 
 # Копируем package.json и устанавливаем зависимости
 COPY package*.json ./
-RUN npm ci
 
-# Копируем исходный код и собираем приложение
+# Устанавливаем зависимости с правильными правами
+RUN npm ci && \
+    chmod -R 755 node_modules/.bin
+
+# Копируем исходный код
 COPY . .
+
+# Даем права на выполнение для react-scripts
+RUN chmod +x node_modules/.bin/react-scripts
+
+# Собираем приложение
 RUN npm run build
 
 # Stage 2: Production
@@ -17,14 +25,14 @@ FROM nginx:alpine
 # Копируем собранное приложение
 COPY --from=build /app/build /usr/share/nginx/html
 
-# Создаем конфигурацию nginx по умолчанию, если файла нет
+# Создаем базовую конфигурацию nginx
 RUN echo 'server { \
     listen 3000; \
     server_name localhost; \
     root /usr/share/nginx/html; \
     index index.html; \
     location / { \
-        try_files \$uri \$uri/ /index.html; \
+        try_files $uri $uri/ /index.html; \
     } \
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ { \
         expires 1y; \
