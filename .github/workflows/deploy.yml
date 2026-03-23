@@ -120,6 +120,7 @@ jobs:
           ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/backend:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        no-cache: true
     
     - name: Build and push frontend
       uses: docker/build-push-action@v5
@@ -131,6 +132,7 @@ jobs:
           ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/frontend:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        no-cache: true
 
   deploy:
     needs: [build-and-push]
@@ -177,82 +179,66 @@ jobs:
           # Логинимся в GitHub Container Registry
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # Создаем упрощенный docker-compose.yml (без version)
-          cat > docker-compose.yml << 'EOF'
-          services:
-            mongodb:
-              image: mongo:6
-              container_name: geophoto-mongodb
-              restart: always
-              volumes:
-                - mongodb_data:/data/db
-              networks:
-                - geophoto-network
-              ports:
-                - "27017:27017"
-            
-            backend:
-              image: ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/backend:latest
-              container_name: geophoto-backend
-              restart: always
-              ports:
-                - "5000:5000"
-              environment:
-                - NODE_ENV=production
-                - MONGODB_URI=mongodb://mongodb:27017/geophoto
-                - JWT_SECRET=${{ secrets.JWT_SECRET }}
-                - PORT=5000
-              depends_on:
-                - mongodb
-              volumes:
-                - uploads:/app/uploads
-              networks:
-                - geophoto-network
-            
-            frontend:
-              image: ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/frontend:latest
-              container_name: geophoto-frontend
-              restart: always
-              ports:
-                - "3000:3000"
-              depends_on:
-                - backend
-              networks:
-                - geophoto-network
+          # Принудительно удаляем старые образы
+          echo "🗑️ Removing old images..."
+          docker rmi ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/backend:latest 2>/dev/null || true
+          docker rmi ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/frontend:latest 2>/dev/null || true
           
-          volumes:
-            mongodb_data:
-            uploads:
-          
-          networks:
-            geophoto-network:
-              driver: bridge
-          EOF
-          
-          # Останавливаем старые контейнеры
+          # Останавливаем и удаляем старые контейнеры
           echo "🛑 Stopping old containers..."
-          docker compose down 2>/dev/null || true
+          docker stop geophoto-backend geophoto-frontend geophoto-mongodb 2>/dev/null || true
+          docker rm geophoto-backend geophoto-frontend geophoto-mongodb 2>/dev/null || true
           
-          # Скачиваем образы
-          echo "📦 Pulling images..."
-          docker compose pull
+          # Запускаем MongoDB
+          echo "🗄️ Starting MongoDB..."
+          docker run -d \
+            --name geophoto-mongodb \
+            --restart always \
+            -v mongodb_data:/data/db \
+            --network geophoto-network \
+            mongo:6 || docker network create geophoto-network 2>/dev/null && \
+            docker run -d \
+              --name geophoto-mongodb \
+              --restart always \
+              -v mongodb_data:/data/db \
+              --network geophoto-network \
+              mongo:6
           
-          # Запускаем контейнеры
-          echo "🚀 Starting containers..."
-          docker compose up -d
+          # Ждем MongoDB
+          sleep 5
+          
+          # Запускаем Backend
+          echo "🚀 Starting backend..."
+          docker run -d \
+            --name geophoto-backend \
+            --restart always \
+            -p 5000:5000 \
+            -e NODE_ENV=production \
+            -e MONGODB_URI="${{ secrets.MONGODB_ATLAS_URI }}" \
+            -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            -v uploads:/app/uploads \
+            --network geophoto-network \
+            ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/backend:latest
+          
+          # Запускаем Frontend
+          echo "🎨 Starting frontend..."
+          docker run -d \
+            --name geophoto-frontend \
+            --restart always \
+            -p 3000:3000 \
+            --network geophoto-network \
+            ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/frontend:latest
           
           # Ждем запуска
           echo "⏳ Waiting for services to start..."
-          sleep 20
+          sleep 15
           
           # Проверяем статус
           echo "📊 Checking status..."
-          docker compose ps
+          docker ps | grep geophoto
           
           # Health check
           echo "🏥 Running health checks..."
-          
-          # Проверяем backend
           for i in {1..30}; do
             if curl -f http://localhost:5000/health 2>/dev/null; then
               echo "✅ Backend health check passed!"
@@ -270,9 +256,6 @@ jobs:
           else
             echo "❌ Deployment failed - backend not responding"
             echo "Backend logs:"
-            docker compose logs backend --tail=50
-            echo ""
-            echo "MongoDB logs:"
-            docker compose logs mongodb --tail=30
+            docker logs geophoto-backend --tail=50
             exit 1
           fi
