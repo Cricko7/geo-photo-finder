@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery } from 'react-query';
+import { useQuery } from '@tanstack/react-query';  // ← исправлено!
 import axios from 'axios';
 import { Box, Typography, CircularProgress, Alert, Paper, Button, Slider, Chip } from '@mui/material';
 import { MyLocation } from '@mui/icons-material';
