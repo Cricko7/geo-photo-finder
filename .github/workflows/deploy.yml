@@ -29,6 +29,17 @@ jobs:
       with:
         node-version: '18.x'
     
+    # Устанавливаем системные зависимости для sharp
+    - name: Install system dependencies for sharp
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libvips-dev \
+          build-essential \
+          python3 \
+          make \
+          g++
+    
     - name: Wait for MongoDB
       run: |
         for i in {1..30}; do
@@ -41,7 +52,9 @@ jobs:
     
     - name: Install dependencies
       working-directory: ./server
-      run: npm install --include=dev
+      run: |
+        npm install --include=dev
+        npm rebuild sharp
     
     - name: Create uploads directory
       working-directory: ./server
@@ -172,6 +185,9 @@ jobs:
             sudo apt-get install -y docker-compose-plugin
           fi
           
+          # Создаем сеть если её нет
+          docker network create geophoto-network 2>/dev/null || true
+          
           # Создаем директорию для приложения
           mkdir -p /opt/geophoto
           cd /opt/geophoto
@@ -196,13 +212,7 @@ jobs:
             --restart always \
             -v mongodb_data:/data/db \
             --network geophoto-network \
-            mongo:6 || docker network create geophoto-network 2>/dev/null && \
-            docker run -d \
-              --name geophoto-mongodb \
-              --restart always \
-              -v mongodb_data:/data/db \
-              --network geophoto-network \
-              mongo:6
+            mongo:6
           
           # Ждем MongoDB
           sleep 5
