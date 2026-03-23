@@ -45,7 +45,10 @@ jobs:
       working-directory: ./server
       run: |
         npm install --include=dev
-        npm list --depth=0
+        # Даем права на выполнение для jest
+        chmod +x node_modules/.bin/jest || true
+        echo "Jest installed at: $(which jest || echo 'not in PATH')"
+        ls -la node_modules/.bin/ | head -20
     
     - name: Create uploads directory
       working-directory: ./server
@@ -54,7 +57,8 @@ jobs:
     - name: Run backend tests
       working-directory: ./server
       run: |
-        NODE_ENV=test npx jest --coverage --forceExit --detectOpenHandles --verbose --runInBand --testTimeout=30000
+        # Используем node для запуска jest напрямую
+        node node_modules/jest/bin/jest.js --coverage --forceExit --detectOpenHandles --verbose --runInBand --testTimeout=30000
       env:
         NODE_ENV: test
         MONGODB_URI: mongodb://localhost:27017/geophoto_test
@@ -62,26 +66,7 @@ jobs:
         PORT: 5001
       timeout-minutes: 10
 
-  test-frontend:
-    runs-on: ubuntu-latest
-    if: false  # Временно отключаем frontend тесты
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Use Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18.x'
-    
-    - name: Install frontend dependencies
-      working-directory: ./client
-      run: npm install || echo "Frontend setup skipped"
-    
-    - name: Build frontend
-      working-directory: ./client
-      run: npm run build || echo "Frontend build skipped"
-
+  # Опционально: сборка Docker образов
   build-and-push:
     needs: [test-backend]
     runs-on: ubuntu-latest
