@@ -1,9 +1,15 @@
 # geo-photo-finder
 
-<img src="images\seo-map-location-place-search.svg" width="400" height="300">
+<img src="images\seo-map-location-place-search.svg" width="400" height="400">
 
 ## Open Source instrument for searching places over the world
 ### Инструмент для поиска мест по всему миру с открытым исходным кодом
+
+______________________
+
+[![CI/CD Pipeline](https://github.com/Cricko7/geo-photo-finder/actions/workflows/deploy.yml/badge.svg)](https://github.com/Cricko7/geo-photo-finder/actions/workflows/deploy.yml)
+[![Coverage](https://img.shields.io/badge/coverage-33.2%25-yellow)](https://github.com/Cricko7/geo-photo-finder/actions)
+
 _______________________________________
 
 
