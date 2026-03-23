@@ -7,15 +7,28 @@ const jwt = require('jsonwebtoken');
 describe('Photo API Tests', () => {
   let testUser;
   let authToken;
+  let server;
 
   beforeAll(async () => {
     const testDB = process.env.MONGODB_URI || 'mongodb://localhost:27017/geophoto_test';
     await mongoose.connect(testDB);
+    
+    // Получаем экземпляр сервера
+    server = app.listen();
   });
 
   afterAll(async () => {
+    // Закрываем все соединения
     await mongoose.connection.dropDatabase();
     await mongoose.connection.close();
+    
+    // Закрываем сервер
+    if (server) {
+      await new Promise(resolve => server.close(resolve));
+    }
+    
+    // Даем время для закрытия всех соединений
+    await new Promise(resolve => setTimeout(resolve, 500));
   });
 
   beforeEach(async () => {
