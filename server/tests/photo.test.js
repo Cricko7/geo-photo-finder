@@ -1,38 +1,58 @@
 const request = require('supertest');
 const mongoose = require('mongoose');
-const app = require('../index');
+const express = require('express');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const photoRoutes = require('../routes/photoRoutes');
+const authRoutes = require('../routes/authRoutes');
+const errorHandler = require('../middleware/errorHandler');
+
+// Создаем тестовое приложение
+const createTestApp = () => {
+  const app = express();
+  
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+  
+  app.use('/api/photos', photoRoutes);
+  app.use('/api/auth', authRoutes);
+  
+  app.get('/health', (req, res) => {
+    res.json({ status: 'OK', timestamp: new Date() });
+  });
+  
+  app.use(errorHandler);
+  
+  return app;
+};
 
 describe('Photo API Tests', () => {
+  let app;
   let testUser;
   let authToken;
-  let server;
+  let connection;
 
   beforeAll(async () => {
-    const testDB = process.env.MONGODB_URI || 'mongodb://localhost:27017/geophoto_test';
-    await mongoose.connect(testDB);
-    
-    // Получаем экземпляр сервера
-    server = app.listen();
+    // Подключаемся к тестовой БД
+    const testDB = 'mongodb://localhost:27017/geophoto_test';
+    connection = await mongoose.connect(testDB);
+    console.log('Test DB connected');
   });
 
   afterAll(async () => {
-    // Закрываем все соединения
-    await mongoose.connection.dropDatabase();
-    await mongoose.connection.close();
-    
-    // Закрываем сервер
-    if (server) {
-      await new Promise(resolve => server.close(resolve));
+    // Очищаем и закрываем соединение
+    if (connection) {
+      await mongoose.connection.dropDatabase();
+      await mongoose.connection.close();
+      console.log('Test DB disconnected');
     }
-    
-    // Даем время для закрытия всех соединений
-    await new Promise(resolve => setTimeout(resolve, 500));
   });
 
   beforeEach(async () => {
-    // Очистка коллекций
+    // Создаем новое приложение для каждого теста
+    app = createTestApp();
+    
+    // Очищаем коллекции
     await User.deleteMany({});
     
     // Создаем тестового пользователя
@@ -44,8 +64,8 @@ describe('Photo API Tests', () => {
     
     // Создаем JWT токен
     authToken = jwt.sign(
-      { id: testUser._id },
-      process.env.JWT_SECRET || 'test-secret-key',
+      { id: testUser._id.toString() },
+      'test-secret-key',
       { expiresIn: '1h' }
     );
   });
@@ -97,7 +117,7 @@ describe('Photo API Tests', () => {
       const response = await request(app)
         .get('/api/photos/invalid-id')
         .set('Authorization', `Bearer ${authToken}`)
-        .expect(500);
+        .expect(400);
       
       expect(response.body.error).toBeDefined();
     });

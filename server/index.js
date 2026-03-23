@@ -30,44 +30,22 @@ app.get('/health', (req, res) => {
 
 app.use(errorHandler);
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/geophoto';
-const PORT = process.env.PORT || 5000;
-
-let server;
-
-// Функция graceful shutdown
-const gracefulShutdown = async () => {
-  console.log('Received shutdown signal, closing connections...');
+// Запуск только если не в тестовом режиме
+if (process.env.NODE_ENV !== 'test') {
+  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/geophoto';
+  const PORT = process.env.PORT || 5000;
   
-  if (server) {
-    await new Promise(resolve => server.close(resolve));
-    console.log('HTTP server closed');
-  }
-  
-  if (mongoose.connection.readyState === 1) {
-    await mongoose.connection.close();
-    console.log('MongoDB connection closed');
-  }
-  
-  console.log('Graceful shutdown completed');
-  process.exit(0);
-};
-
-// Подключение к MongoDB
-mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => {
-    console.log('Connected to MongoDB');
-    server = app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+  mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => {
+      console.log('Connected to MongoDB');
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    })
+    .catch(err => {
+      console.error('MongoDB connection error:', err);
+      process.exit(1);
     });
-  })
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
-    process.exit(1);
-  });
-
-// Обработка сигналов для graceful shutdown
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+}
 
 module.exports = app;

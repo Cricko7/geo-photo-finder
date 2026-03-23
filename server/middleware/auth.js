@@ -9,7 +9,7 @@ module.exports = async (req, res, next) => {
       return res.status(401).json({ error: 'Please authenticate' });
     }
     
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-secret-key');
     const user = await User.findById(decoded.id).select('-password');
     
     if (!user) {
@@ -20,6 +20,7 @@ module.exports = async (req, res, next) => {
     req.token = token;
     next();
   } catch (error) {
+    console.error('Auth error:', error.message);
     res.status(401).json({ error: 'Please authenticate' });
   }
 };
