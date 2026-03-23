@@ -132,7 +132,7 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-  # 🚀 НОВЫЙ JOB: Деплой на сервер
+  # 🚀 Деплой на сервер с использованием пароля
   deploy:
     needs: [build-and-push]
     runs-on: ubuntu-latest
@@ -150,16 +150,17 @@ jobs:
       with:
         host: ${{ secrets.DEPLOY_HOST }}
         username: ${{ secrets.DEPLOY_USER }}
-        key: ${{ secrets.DEPLOY_KEY }}
+        password: ${{ secrets.DEPLOY_PASSWORD }}
         port: ${{ secrets.DEPLOY_PORT || 22 }}
         script: |
-          # Создаем директорию для приложения если её нет
+          echo "🚀 Starting deployment..."
+          
+          # Создаем директорию для приложения
           mkdir -p /opt/geophoto
           cd /opt/geophoto
           
-          # Создаем docker-compose.yml если его нет
-          if [ ! -f docker-compose.yml ]; then
-            cat > docker-compose.yml << 'EOF'
+          # Создаем docker-compose.yml
+          cat > docker-compose.yml << 'EOF'
           version: '3.8'
           
           services:
@@ -171,6 +172,8 @@ jobs:
                 - mongodb_data:/data/db
               networks:
                 - geophoto-network
+              ports:
+                - "27017:27017"
             
             backend:
               image: ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/backend:latest
@@ -209,35 +212,51 @@ jobs:
             geophoto-network:
               driver: bridge
           EOF
-          fi
-          
-          # Создаем .env файл если его нет
-          if [ ! -f .env ]; then
-            cat > .env << EOF
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          MONGODB_URI=mongodb://mongodb:27017/geophoto
-          NODE_ENV=production
-          EOF
-          fi
           
           # Логинимся в GitHub Container Registry
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
           # Скачиваем последние образы
+          echo "📦 Pulling latest images..."
           docker-compose pull
           
-          # Перезапускаем сервисы
-          docker-compose up -d --remove-orphans
+          # Останавливаем старые контейнеры
+          echo "🛑 Stopping old containers..."
+          docker-compose down
+          
+          # Запускаем новые контейнеры
+          echo "🚀 Starting new containers..."
+          docker-compose up -d
           
           # Очищаем неиспользуемые образы
+          echo "🧹 Cleaning up..."
           docker image prune -f
           
-          # Проверяем статус
+          # Ждем запуска
           sleep 10
+          
+          # Проверяем статус
+          echo "📊 Checking status..."
           docker-compose ps
           
           # Health check
-          curl -f http://localhost:5000/health || exit 1
-          curl -f http://localhost:3000 || exit 1
+          echo "🏥 Running health checks..."
+          if curl -f http://localhost:5000/health; then
+            echo "✅ Backend health check passed!"
+          else
+            echo "❌ Backend health check failed!"
+            docker-compose logs backend
+            exit 1
+          fi
           
-          echo "✅ Deployment successful!"
+          if curl -f http://localhost:3000; then
+            echo "✅ Frontend health check passed!"
+          else
+            echo "❌ Frontend health check failed!"
+            docker-compose logs frontend
+            exit 1
+          fi
+          
+          echo "🎉 Deployment successful! Application is live at:"
+          echo "   Backend: http://${{ secrets.DEPLOY_HOST }}:5000"
+          echo "   Frontend: http://${{ secrets.DEPLOY_HOST }}:3000"
