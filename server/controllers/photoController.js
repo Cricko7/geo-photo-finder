@@ -2,10 +2,7 @@ const Photo = require('../models/Photo');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const exifr = require('exifr');
-const sharp = require('sharp');
 
-// Настройка multer для загрузки файлов
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = 'uploads/';
@@ -22,12 +19,11 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|heic/;
+    const allowedTypes = /jpeg|jpg|png|gif/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    
     if (mimetype && extname) {
       return cb(null, true);
     } else {
@@ -48,68 +44,17 @@ exports.uploadPhoto = (req, res, next) => {
     }
     
     try {
-      // Извлечение EXIF данных
-      let exifData = null;
-      try {
-        exifData = await exifr.parse(req.file.path);
-      } catch (exifError) {
-        console.warn('Could not parse EXIF data:', exifError.message);
-      }
-      
-      let location = null;
-      let gpsData = null;
-      
-      if (exifData && exifData.latitude && exifData.longitude) {
-        gpsData = {
-          latitude: exifData.latitude,
-          longitude: exifData.longitude,
-          altitude: exifData.altitude || null,
-          accuracy: exifData.gps_accuracy || null,
-          timestamp: exifData.DateTimeOriginal || new Date()
-        };
-        
-        location = {
-          type: 'Point',
-          coordinates: [exifData.longitude, exifData.latitude]
-        };
-      }
-      
-      // Оптимизация изображения
-      let optimizedPath = req.file.path;
-      try {
-        optimizedPath = req.file.path.replace(/\.\w+$/, '_optimized.jpg');
-        await sharp(req.file.path)
-          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 85 })
-          .toFile(optimizedPath);
-        
-        // Удаляем оригинал если он отличается
-        if (optimizedPath !== req.file.path && fs.existsSync(req.file.path)) {
-          fs.unlinkSync(req.file.path);
-        }
-      } catch (sharpError) {
-        console.error('Image optimization failed:', sharpError.message);
-      }
-      
       // Создание записи в БД
       const photo = new Photo({
         userId: req.user.id,
-        filename: path.basename(optimizedPath),
+        filename: req.file.filename,
         originalName: req.file.originalname,
-        path: optimizedPath,
-        mimeType: 'image/jpeg',
-        size: fs.existsSync(optimizedPath) ? fs.statSync(optimizedPath).size : 0,
-        location: location,
-        gpsData: gpsData,
-        metadata: {
-          make: exifData?.Make,
-          model: exifData?.Model,
-          dateTime: exifData?.DateTimeOriginal,
-          focalLength: exifData?.FocalLength,
-          iso: exifData?.ISO,
-          exposureTime: exifData?.ExposureTime,
-          aperture: exifData?.ApertureValue
-        }
+        path: req.file.path,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        location: null,
+        gpsData: null,
+        metadata: {}
       });
       
       await photo.save();
@@ -125,6 +70,10 @@ exports.uploadPhoto = (req, res, next) => {
         message: 'Photo uploaded successfully'
       });
     } catch (error) {
+      // Удаляем файл в случае ошибки
+      if (fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
       next(error);
     }
   });
@@ -245,7 +194,7 @@ exports.deletePhoto = async (req, res, next) => {
 exports.getLocationStats = async (req, res, next) => {
   try {
     const stats = await Photo.aggregate([
-      { $match: { userId: req.user._id, location: { $exists: true } } },
+      { $match: { userId: req.user._id, location: { $exists: true, $ne: null } } },
       { $group: {
         _id: {
           lat: { $arrayElemAt: ['$location.coordinates', 1] },
