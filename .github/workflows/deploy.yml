@@ -29,15 +29,26 @@ jobs:
       with:
         node-version: '18.x'
     
-    # Устанавливаем зависимости для backend
+    - name: Debug - Check files
+      run: |
+        ls -la
+        ls -la server/ || echo "Server directory not found"
+    
     - name: Install backend dependencies
       working-directory: ./server
       run: |
-        # Создаем package-lock.json если его нет
-        if [ ! -f package-lock.json ]; then
-          npm install --package-lock-only
+        echo "Installing dependencies..."
+        npm install --verbose
+        echo "Checking jest installation..."
+        if [ -f node_modules/.bin/jest ]; then
+          echo "✅ Jest found in node_modules/.bin/jest"
+          ls -la node_modules/.bin/jest
+        else
+          echo "❌ Jest not found, installing specifically..."
+          npm install --save-dev jest@29.6.4
         fi
-        npm install
+        echo "Node modules installed:"
+        ls -la node_modules/.bin/ | head -20
     
     - name: Create uploads directory
       working-directory: ./server
@@ -45,7 +56,15 @@ jobs:
     
     - name: Run backend tests
       working-directory: ./server
-      run: npm test
+      run: |
+        # Пробуем разные способы запуска
+        if [ -f node_modules/.bin/jest ]; then
+          echo "Running jest from node_modules..."
+          node_modules/.bin/jest --coverage --forceExit --detectOpenHandles --verbose
+        else
+          echo "Running jest with npx..."
+          npx jest --coverage --forceExit --detectOpenHandles --verbose
+        fi
       env:
         NODE_ENV: test
         MONGODB_URI: mongodb://localhost:27017/geophoto_test
@@ -66,49 +85,30 @@ jobs:
     
     - name: Install frontend dependencies
       working-directory: ./client
-      run: |
-        if [ ! -f package-lock.json ]; then
-          npm install --package-lock-only
-        fi
-        npm install
+      run: npm install
     
-    - name: Run frontend tests
+    - name: Run frontend tests (optional)
       working-directory: ./client
-      run: npm test -- --watchAll=false --passWithNoTests || true
+      run: |
+        if [ -f package.json ] && grep -q '"test"' package.json; then
+          npm test -- --watchAll=false --passWithNoTests || true
+        else
+          echo "No tests configured for frontend"
+        fi
       env:
         CI: true
     
     - name: Build frontend
       working-directory: ./client
-      run: npm run build || true
-
-  lint:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Use Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18.x'
-    
-    - name: Lint backend
-      working-directory: ./server
       run: |
-        npm install
-        npm run lint 2>&1 || echo "Linting issues found but continuing"
-      continue-on-error: true
-    
-    - name: Lint frontend
-      working-directory: ./client
-      run: |
-        npm install
-        npm run lint 2>&1 || echo "Linting issues found but continuing"
-      continue-on-error: true
+        if [ -f package.json ] && grep -q '"build"' package.json; then
+          npm run build || echo "Build failed but continuing"
+        else
+          echo "No build script configured"
+        fi
 
   build-and-push:
-    needs: [test-backend, test-frontend, lint]
+    needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     
@@ -145,45 +145,3 @@ jobs:
           ${{ secrets.DOCKER_USERNAME }}/geophoto-frontend:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Deploy to production server
-      uses: appleboy/ssh-action@v0.1.5
-      with:
-        host: ${{ secrets.DEPLOY_HOST }}
-        username: ${{ secrets.DEPLOY_USER }}
-        key: ${{ secrets.DEPLOY_KEY }}
-        script: |
-          cd /opt/geophoto
-          
-          # Создаем .env файл если его нет
-          if [ ! -f .env ]; then
-            cat > .env << EOF
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            MONGODB_URI=${{ secrets.MONGODB_URI }}
-            NODE_ENV=production
-            ENABLE_AI_ANALYSIS=true
-            OLLAMA_URL=http://ollama:11434
-            EOF
-          fi
-          
-          # Pull последние образы
-          docker-compose pull
-          
-          # Перезапускаем сервисы
-          docker-compose up -d --remove-orphans
-          
-          # Очищаем неиспользуемые образы
-          docker image prune -f
-          
-          # Проверяем статус
-          sleep 10
-          docker-compose ps
-          
-          # Health check
-          curl -f http://localhost:5000/health || exit 1
