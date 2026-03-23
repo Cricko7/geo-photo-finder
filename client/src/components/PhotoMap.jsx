@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import axios from 'axios';
 
 // Исправляем проблему с иконками Leaflet в React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -19,9 +18,11 @@ const ChangeView = ({ center, zoom }) => {
 };
 
 const PhotoMap = ({ photos, center, zoom }) => {
+  const photosWithLocation = photos?.filter(p => p.location?.coordinates) || [];
+
   return (
     <MapContainer 
-      style={{ height: '500px', width: '100%' }}
+      style={{ height: '500px', width: '100%', borderRadius: '8px' }}
       center={center}
       zoom={zoom}
     >
@@ -30,28 +31,28 @@ const PhotoMap = ({ photos, center, zoom }) => {
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       />
       <ChangeView center={center} zoom={zoom} />
-      {photos.map(photo => (
-        photo.location?.coordinates && (
-          <Marker 
-            key={photo._id}
-            position={[photo.location.coordinates[1], photo.location.coordinates[0]]}
-          >
-            <Popup>
-              <div>
-                <img 
-                  src={`http://localhost:5000/${photo.path}`} 
-                  alt={photo.originalName}
-                  style={{ maxWidth: '200px', maxHeight: '150px' }}
-                />
-                <p><strong>Дата:</strong> {new Date(photo.createdAt).toLocaleString()}</p>
-                <p><strong>Устройство:</strong> {photo.metadata?.make} {photo.metadata?.model}</p>
-                {photo.aiAnalysis && (
-                  <p><strong>AI описание:</strong> {photo.aiAnalysis.description}</p>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-        )
+      {photosWithLocation.map(photo => (
+        <Marker 
+          key={photo._id}
+          position={[photo.location.coordinates[1], photo.location.coordinates[0]]}
+        >
+          <Popup>
+            <div style={{ minWidth: '200px' }}>
+              <img 
+                src={`http://194.87.43.20:5000/${photo.path}`}
+                alt={photo.originalName}
+                style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '4px' }}
+              />
+              <p><strong>📅 Дата:</strong> {new Date(photo.createdAt).toLocaleString()}</p>
+              {photo.metadata?.make && (
+                <p><strong>📷 Устройство:</strong> {photo.metadata.make} {photo.metadata.model}</p>
+              )}
+              {photo.aiAnalysis?.description && (
+                <p><strong>🤖 AI:</strong> {photo.aiAnalysis.description}</p>
+              )}
+            </div>
+          </Popup>
+        </Marker>
       ))}
     </MapContainer>
   );

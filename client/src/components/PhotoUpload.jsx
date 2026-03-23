@@ -17,13 +17,22 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  CircularProgress
 } from '@mui/material';
-import { CloudUpload, PhotoCamera, Close, LocationOn, Info } from '@mui/icons-material';
+import { 
+  CloudUpload, 
+  PhotoCamera, 
+  Close, 
+  LocationOn, 
+  Info,
+  CheckCircle,
+  Error
+} from '@mui/icons-material';
 import axios from 'axios';
 import EXIF from 'exifr';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://194.87.43.20:5000/api';
 
 const PhotoUpload = () => {
   const [files, setFiles] = useState([]);
@@ -60,7 +69,6 @@ const PhotoUpload = () => {
       },
       onError: (error) => {
         console.error('Upload error:', error);
-        alert('Ошибка загрузки: ' + error.response?.data?.error || error.message);
       }
     }
   );
@@ -70,11 +78,13 @@ const PhotoUpload = () => {
       acceptedFiles.map(async (file) => {
         try {
           const exifData = await EXIF.parse(file);
+          const hasGPS = !!(exifData?.latitude && exifData?.longitude);
+          
           return {
             file,
             preview: URL.createObjectURL(file),
-            hasGPS: !!(exifData?.latitude && exifData?.longitude),
-            gps: exifData ? {
+            hasGPS,
+            gps: hasGPS ? {
               lat: exifData.latitude,
               lng: exifData.longitude
             } : null,
@@ -83,7 +93,8 @@ const PhotoUpload = () => {
               model: exifData?.Model,
               dateTime: exifData?.DateTimeOriginal,
               focalLength: exifData?.FocalLength,
-              iso: exifData?.ISO
+              iso: exifData?.ISO,
+              exposureTime: exifData?.ExposureTime
             }
           };
         } catch (error) {
@@ -106,7 +117,7 @@ const PhotoUpload = () => {
     accept: {
       'image/*': ['.jpeg', '.jpg', '.png', '.heic']
     },
-    maxSize: 10485760 // 10MB
+    maxSize: 10 * 1024 * 1024 // 10MB
   });
 
   const handleUpload = () => {
@@ -128,7 +139,7 @@ const PhotoUpload = () => {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
       <Typography variant="h4" gutterBottom>
         Загрузить фото
       </Typography>
@@ -162,7 +173,7 @@ const PhotoUpload = () => {
           Поддерживаются JPG, PNG, HEIC (до 10MB)
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-          Фото с GPS координатами будут отображаться на карте
+          📍 Фото с GPS координатами будут автоматически отмечены на карте
         </Typography>
       </Paper>
 
@@ -178,7 +189,7 @@ const PhotoUpload = () => {
               onClick={handleUpload}
               disabled={uploadMutation.isLoading}
             >
-              {uploadMutation.isLoading ? 'Загрузка...' : 'Загрузить все фото'}
+              {uploadMutation.isLoading ? <CircularProgress size={24} /> : 'Загрузить все фото'}
             </Button>
           </Box>
           
@@ -207,7 +218,7 @@ const PhotoUpload = () => {
                       <Chip
                         size="small"
                         icon={<LocationOn />}
-                        label={file.hasGPS ? 'GPS найден' : 'GPS не найден'}
+                        label={file.hasGPS ? '📍 GPS найден' : '❌ GPS не найден'}
                         color={file.hasGPS ? 'success' : 'default'}
                       />
                     </Box>
@@ -248,14 +259,14 @@ const PhotoUpload = () => {
                 style={{ width: '100%', borderRadius: '8px', marginBottom: '16px' }}
               />
               <Typography variant="body2" gutterBottom>
-                <strong>Имя файла:</strong> {selectedPhoto.file.name}
+                <strong>📄 Имя файла:</strong> {selectedPhoto.file.name}
               </Typography>
               <Typography variant="body2" gutterBottom>
-                <strong>Размер:</strong> {(selectedPhoto.file.size / 1024 / 1024).toFixed(2)} MB
+                <strong>📦 Размер:</strong> {(selectedPhoto.file.size / 1024 / 1024).toFixed(2)} MB
               </Typography>
               {selectedPhoto.hasGPS && (
                 <>
-                  <Typography variant="body2" gutterBottom>
+                  <Typography variant="body2" gutterBottom sx={{ mt: 1 }}>
                     <strong>📍 GPS координаты:</strong>
                   </Typography>
                   <Typography variant="body2" gutterBottom>
@@ -284,6 +295,11 @@ const PhotoUpload = () => {
               {selectedPhoto.metadata?.iso && (
                 <Typography variant="body2" gutterBottom>
                   <strong>🎚️ ISO:</strong> {selectedPhoto.metadata.iso}
+                </Typography>
+              )}
+              {selectedPhoto.metadata?.exposureTime && (
+                <Typography variant="body2" gutterBottom>
+                  <strong>⏱️ Выдержка:</strong> {selectedPhoto.metadata.exposureTime} сек
                 </Typography>
               )}
             </Box>

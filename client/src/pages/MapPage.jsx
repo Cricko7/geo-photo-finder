@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import axios from 'axios';
-import { Box, Typography, CircularProgress, Alert, FormControl, InputLabel, Select, MenuItem, Slider, Paper } from '@mui/material';
+import { Box, Typography, CircularProgress, Alert, Paper, Button, Slider, Chip } from '@mui/material';
+import { MyLocation } from '@mui/icons-material';
 import PhotoMap from '../components/PhotoMap';
-import { useAuth } from '../contexts/AuthContext';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://194.87.43.20:5000/api';
 
 const MapPage = () => {
-  const { token } = useAuth();
+  const token = localStorage.getItem('token');
   const [center, setCenter] = useState([55.751244, 37.618423]); // Москва
   const [radius, setRadius] = useState(1000);
   const [searchLocation, setSearchLocation] = useState(null);
@@ -20,7 +20,8 @@ const MapPage = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       return response.data.data;
-    }
+    },
+    { enabled: !!token }
   );
 
   const { data: nearbyPhotos } = useQuery(
@@ -37,7 +38,7 @@ const MapPage = () => {
       });
       return response.data.data;
     },
-    { enabled: !!searchLocation }
+    { enabled: !!searchLocation && !!token }
   );
 
   const handleGetUserLocation = () => {
@@ -76,6 +77,7 @@ const MapPage = () => {
 
   const photosWithLocation = photos?.filter(p => p.location?.coordinates) || [];
   const displayPhotos = searchLocation ? nearbyPhotos : photosWithLocation;
+  const photosCount = displayPhotos?.length || 0;
 
   return (
     <Box sx={{ p: 3 }}>
@@ -84,43 +86,50 @@ const MapPage = () => {
       </Typography>
       
       <Paper sx={{ p: 2, mb: 2, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Button variant="contained" onClick={handleGetUserLocation}>
+        <Button 
+          variant="contained" 
+          startIcon={<MyLocation />}
+          onClick={handleGetUserLocation}
+        >
           Моё местоположение
         </Button>
         
         {searchLocation && (
-          <Box sx={{ minWidth: 200 }}>
-            <Typography variant="caption">Радиус поиска (м)</Typography>
-            <Slider
-              value={radius}
-              onChange={(_, val) => setRadius(val)}
-              min={100}
-              max={5000}
-              step={100}
-              valueLabelDisplay="auto"
+          <>
+            <Box sx={{ minWidth: 200, flex: 1 }}>
+              <Typography variant="caption">Радиус поиска: {radius} м</Typography>
+              <Slider
+                value={radius}
+                onChange={(_, val) => setRadius(val)}
+                min={100}
+                max={5000}
+                step={100}
+                valueLabelDisplay="auto"
+              />
+            </Box>
+            <Chip 
+              label={`Найдено фото: ${photosCount}`}
+              color="primary"
+              variant="outlined"
             />
-          </Box>
-        )}
-        
-        {searchLocation && (
-          <Typography variant="body2" color="text.secondary">
-            Найдено фото: {nearbyPhotos?.length || 0}
-          </Typography>
+          </>
         )}
       </Paper>
       
-      {displayPhotos && displayPhotos.length > 0 ? (
+      {photosWithLocation.length === 0 && !searchLocation ? (
+        <Alert severity="info">
+          📸 Нет фотографий с GPS координатами. Загрузите фото с геотегами, чтобы они появились на карте!
+        </Alert>
+      ) : photosCount === 0 && searchLocation ? (
+        <Alert severity="info">
+          🗺️ В радиусе {radius} метров не найдено фотографий
+        </Alert>
+      ) : (
         <PhotoMap 
           photos={displayPhotos} 
           center={center}
           zoom={searchLocation ? 13 : 5}
         />
-      ) : (
-        <Alert severity="info">
-          {searchLocation 
-            ? 'Нет фотографий в выбранном радиусе' 
-            : 'Нет фотографий с GPS координатами. Загрузите фото с геотегами!'}
-        </Alert>
       )}
     </Box>
   );
