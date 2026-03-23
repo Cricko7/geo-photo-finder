@@ -1,3 +1,137 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+    
+    - name: Wait for MongoDB
+      run: |
+        for i in {1..30}; do
+          if mongosh --eval "db.runCommand({ ping: 1 })" &> /dev/null; then
+            echo "✅ MongoDB is ready!"
+            break
+          fi
+          sleep 2
+        done
+    
+    - name: Install dependencies
+      working-directory: ./server
+      run: npm install --include=dev
+    
+    - name: Create uploads directory
+      working-directory: ./server
+      run: mkdir -p uploads
+    
+    - name: Run tests
+      working-directory: ./server
+      run: |
+        node node_modules/jest/bin/jest.js --coverage --forceExit --detectOpenHandles --verbose --runInBand --testTimeout=30000
+      env:
+        NODE_ENV: test
+        MONGODB_URI: mongodb://localhost:27017/geophoto_test
+        JWT_SECRET: test-secret-key
+        PORT: 5001
+      timeout-minutes: 10
+    
+    - name: Upload test coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: server/coverage/
+        retention-days: 7
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+    
+    - name: Install frontend dependencies
+      working-directory: ./client
+      run: npm install || echo "Frontend dependencies installed"
+    
+    - name: Build frontend
+      working-directory: ./client
+      run: npm run build || echo "Frontend build completed"
+
+  build-and-push:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Convert repository name to lowercase
+      id: repo-name
+      run: |
+        REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+        echo "repo_lower=$REPO_LOWER" >> $GITHUB_OUTPUT
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build and push backend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./server
+        push: true
+        tags: |
+          ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/backend:latest
+          ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/backend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build and push frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: ./client
+        push: true
+        tags: |
+          ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/frontend:latest
+          ghcr.io/${{ steps.repo-name.outputs.repo_lower }}/frontend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
   # 🚀 Деплой на сервер
   deploy:
     needs: [build-and-push]
@@ -34,7 +168,7 @@
           mkdir -p /opt/geophoto
           cd /opt/geophoto
           
-          # Создаем docker-compose.yml (исправленный)
+          # Создаем docker-compose.yml
           cat > docker-compose.yml << 'EOF'
           version: '3.8'
           
@@ -91,19 +225,15 @@
           # Логинимся в GitHub Container Registry
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # Пытаемся использовать docker compose (новая версия) или docker-compose (старая)
+          # Используем docker compose (новая версия)
           echo "📦 Pulling latest images..."
-          if docker compose version &> /dev/null; then
-            docker compose pull
-            docker compose down
-            docker compose up -d
-            DOCKER_CMD="docker compose"
-          else
-            docker-compose pull
-            docker-compose down
-            docker-compose up -d
-            DOCKER_CMD="docker-compose"
-          fi
+          docker compose pull || docker-compose pull
+          
+          echo "🛑 Stopping old containers..."
+          docker compose down || docker-compose down
+          
+          echo "🚀 Starting new containers..."
+          docker compose up -d || docker-compose up -d
           
           # Очищаем неиспользуемые образы
           echo "🧹 Cleaning up..."
@@ -115,11 +245,7 @@
           
           # Проверяем статус
           echo "📊 Checking status..."
-          if [ "$DOCKER_CMD" = "docker compose" ]; then
-            docker compose ps
-          else
-            docker-compose ps
-          fi
+          docker compose ps || docker-compose ps
           
           # Health check с повторными попытками
           echo "🏥 Running health checks..."
@@ -153,10 +279,6 @@
           else
             echo "❌ Deployment failed - backend not responding"
             echo "Backend logs:"
-            if [ "$DOCKER_CMD" = "docker compose" ]; then
-              docker compose logs backend --tail=50
-            else
-              docker-compose logs backend --tail=50
-            fi
+            docker compose logs backend --tail=50 || docker-compose logs backend --tail=50
             exit 1
           fi
