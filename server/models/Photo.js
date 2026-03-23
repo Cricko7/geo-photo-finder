@@ -23,8 +23,8 @@ const photoSchema = new mongoose.Schema({
       default: 'Point'
     },
     coordinates: {
-      type: [Number], // [lng, lat]
-      required: true
+      type: [Number],
+      required: false
     }
   },
   gpsData: {
@@ -46,13 +46,17 @@ const photoSchema = new mongoose.Schema({
     aperture: Number
   },
   
-  // AI анализ от ollama
+  // AI анализ
   aiAnalysis: {
     description: String,
     objects: [String],
     scene: String,
+    colors: [String],
+    details: [String],
+    locationClues: [String],
     confidence: Number,
-    analyzedAt: Date
+    analyzedAt: Date,
+    model: String
   },
   
   // Статистика
