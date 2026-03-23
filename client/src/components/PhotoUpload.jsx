@@ -11,9 +11,15 @@ import {
   Card,
   CardMedia,
   CardContent,
-  Grid
+  Grid,
+  Chip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
-import { CloudUpload, PhotoCamera } from '@mui/icons-material';
+import { CloudUpload, PhotoCamera, Close, LocationOn, Info } from '@mui/icons-material';
 import axios from 'axios';
 import EXIF from 'exifr';
 
@@ -22,6 +28,8 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 const PhotoUpload = () => {
   const [files, setFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState({});
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [openDialog, setOpenDialog] = useState(false);
   const queryClient = useQueryClient();
 
   const uploadMutation = useMutation(
@@ -49,6 +57,10 @@ const PhotoUpload = () => {
         queryClient.invalidateQueries('photos');
         setFiles([]);
         setUploadProgress({});
+      },
+      onError: (error) => {
+        console.error('Upload error:', error);
+        alert('Ошибка загрузки: ' + error.response?.data?.error || error.message);
       }
     }
   );
@@ -61,18 +73,26 @@ const PhotoUpload = () => {
           return {
             file,
             preview: URL.createObjectURL(file),
-            hasGPS: exifData?.latitude && exifData?.longitude,
+            hasGPS: !!(exifData?.latitude && exifData?.longitude),
             gps: exifData ? {
               lat: exifData.latitude,
               lng: exifData.longitude
-            } : null
+            } : null,
+            metadata: {
+              make: exifData?.Make,
+              model: exifData?.Model,
+              dateTime: exifData?.DateTimeOriginal,
+              focalLength: exifData?.FocalLength,
+              iso: exifData?.ISO
+            }
           };
         } catch (error) {
           return {
             file,
             preview: URL.createObjectURL(file),
             hasGPS: false,
-            gps: null
+            gps: null,
+            metadata: {}
           };
         }
       })
@@ -97,6 +117,16 @@ const PhotoUpload = () => {
     });
   };
 
+  const handleViewDetails = (photo) => {
+    setSelectedPhoto(photo);
+    setOpenDialog(true);
+  };
+
+  const formatDate = (date) => {
+    if (!date) return 'Неизвестно';
+    return new Date(date).toLocaleString();
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
@@ -113,7 +143,12 @@ const PhotoUpload = () => {
           bgcolor: isDragActive ? 'action.hover' : 'background.paper',
           border: '2px dashed',
           borderColor: 'primary.main',
-          borderRadius: 2
+          borderRadius: 2,
+          transition: 'all 0.3s',
+          '&:hover': {
+            bgcolor: 'action.hover',
+            transform: 'translateY(-2px)'
+          }
         }}
       >
         <input {...getInputProps()} />
@@ -126,30 +161,56 @@ const PhotoUpload = () => {
         <Typography variant="body2" color="text.secondary">
           Поддерживаются JPG, PNG, HEIC (до 10MB)
         </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+          Фото с GPS координатами будут отображаться на карте
+        </Typography>
       </Paper>
 
       {files.length > 0 && (
         <Box sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Выбрано файлов: {files.length}
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              Выбрано файлов: {files.length}
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<PhotoCamera />}
+              onClick={handleUpload}
+              disabled={uploadMutation.isLoading}
+            >
+              {uploadMutation.isLoading ? 'Загрузка...' : 'Загрузить все фото'}
+            </Button>
+          </Box>
+          
           <Grid container spacing={2}>
             {files.map((file, index) => (
               <Grid item xs={12} sm={6} md={4} key={index}>
-                <Card>
+                <Card sx={{ position: 'relative' }}>
+                  <IconButton
+                    sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'white', '&:hover': { bgcolor: '#f5f5f5' } }}
+                    onClick={() => handleViewDetails(file)}
+                  >
+                    <Info />
+                  </IconButton>
                   <CardMedia
                     component="img"
-                    height="140"
+                    height="200"
                     image={file.preview}
                     alt={file.file.name}
+                    sx={{ objectFit: 'cover' }}
                   />
                   <CardContent>
                     <Typography variant="body2" noWrap>
                       {file.file.name}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {file.hasGPS ? '📍 GPS найден' : '⚠️ GPS не найден'}
-                    </Typography>
+                    <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Chip
+                        size="small"
+                        icon={<LocationOn />}
+                        label={file.hasGPS ? 'GPS найден' : 'GPS не найден'}
+                        color={file.hasGPS ? 'success' : 'default'}
+                      />
+                    </Box>
                     {uploadProgress[file.file.name] && (
                       <Box sx={{ mt: 1 }}>
                         <LinearProgress 
@@ -166,24 +227,72 @@ const PhotoUpload = () => {
               </Grid>
             ))}
           </Grid>
-          
-          <Button
-            variant="contained"
-            startIcon={<PhotoCamera />}
-            onClick={handleUpload}
-            disabled={uploadMutation.isLoading}
-            sx={{ mt: 2 }}
-          >
-            {uploadMutation.isLoading ? 'Загрузка...' : 'Загрузить все фото'}
-          </Button>
         </Box>
       )}
 
       {uploadMutation.isError && (
         <Alert severity="error" sx={{ mt: 2 }}>
-          Ошибка загрузки: {uploadMutation.error.message}
+          Ошибка загрузки: {uploadMutation.error.response?.data?.error || uploadMutation.error.message}
         </Alert>
       )}
+
+      {/* Диалог с деталями фото */}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Детали фото</DialogTitle>
+        <DialogContent>
+          {selectedPhoto && (
+            <Box>
+              <img 
+                src={selectedPhoto.preview} 
+                alt={selectedPhoto.file.name}
+                style={{ width: '100%', borderRadius: '8px', marginBottom: '16px' }}
+              />
+              <Typography variant="body2" gutterBottom>
+                <strong>Имя файла:</strong> {selectedPhoto.file.name}
+              </Typography>
+              <Typography variant="body2" gutterBottom>
+                <strong>Размер:</strong> {(selectedPhoto.file.size / 1024 / 1024).toFixed(2)} MB
+              </Typography>
+              {selectedPhoto.hasGPS && (
+                <>
+                  <Typography variant="body2" gutterBottom>
+                    <strong>📍 GPS координаты:</strong>
+                  </Typography>
+                  <Typography variant="body2" gutterBottom>
+                    Широта: {selectedPhoto.gps.lat.toFixed(6)}°
+                  </Typography>
+                  <Typography variant="body2" gutterBottom>
+                    Долгота: {selectedPhoto.gps.lng.toFixed(6)}°
+                  </Typography>
+                </>
+              )}
+              {selectedPhoto.metadata?.make && (
+                <Typography variant="body2" gutterBottom>
+                  <strong>📷 Устройство:</strong> {selectedPhoto.metadata.make} {selectedPhoto.metadata.model}
+                </Typography>
+              )}
+              {selectedPhoto.metadata?.dateTime && (
+                <Typography variant="body2" gutterBottom>
+                  <strong>📅 Дата съемки:</strong> {formatDate(selectedPhoto.metadata.dateTime)}
+                </Typography>
+              )}
+              {selectedPhoto.metadata?.focalLength && (
+                <Typography variant="body2" gutterBottom>
+                  <strong>🔍 Фокусное расстояние:</strong> {selectedPhoto.metadata.focalLength} мм
+                </Typography>
+              )}
+              {selectedPhoto.metadata?.iso && (
+                <Typography variant="body2" gutterBottom>
+                  <strong>🎚️ ISO:</strong> {selectedPhoto.metadata.iso}
+                </Typography>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDialog(false)}>Закрыть</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
