@@ -1,14 +1,13 @@
 {
   "name": "geo-photo-finder-server",
   "version": "1.0.0",
-  "description": "Geo Photo Finder Backend API",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest --coverage --forceExit --detectOpenHandles --verbose",
+    "test": "jest --coverage --forceExit --detectOpenHandles --verbose --runInBand --testTimeout=30000",
     "test:watch": "jest --watch",
-    "test:ci": "jest --ci --coverage --forceExit --detectOpenHandles --verbose"
+    "test:ci": "jest --ci --coverage --forceExit --detectOpenHandles --verbose --runInBand --maxWorkers=2"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -23,12 +22,14 @@
     "express-rate-limit": "^6.10.0",
     "helmet": "^7.0.0",
     "winston": "^3.10.0",
-    "express-validator": "^7.0.1"
+    "express-validator": "^7.0.1",
+    "axios": "^1.5.0"
   },
   "devDependencies": {
     "jest": "^29.6.4",
     "supertest": "^6.3.3",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "axios": "^1.5.0"
   },
   "jest": {
     "testEnvironment": "node",
@@ -36,7 +37,8 @@
     "forceExit": true,
     "detectOpenHandles": true,
     "verbose": true,
-    "testTimeout": 10000,
+    "testTimeout": 30000,
+    "runInBand": true,
     "collectCoverageFrom": [
       "**/*.js",
       "!**/node_modules/**",

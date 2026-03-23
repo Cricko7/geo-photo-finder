@@ -53,7 +53,11 @@ jobs:
     - name: Install dependencies
       working-directory: ./server
       run: |
-        npm install --include=dev
+        # Устанавливаем зависимости
+        npm install --include=dev --verbose
+        # Проверяем установку axios
+        npm list axios || echo "axios not found"
+        # Пересобираем sharp
         npm rebuild sharp
     
     - name: Create uploads directory
