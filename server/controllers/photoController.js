@@ -6,6 +6,14 @@ const exifr = require('exifr');
 const sharp = require('sharp');
 const ollamaService = require('../services/ollamaService');
 
+const UPLOADS_RELATIVE_DIR = 'uploads';
+const uploadsDirAbsolute = path.join(process.cwd(), UPLOADS_RELATIVE_DIR);
+if (!fs.existsSync(uploadsDirAbsolute)) {
+  fs.mkdirSync(uploadsDirAbsolute, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDirAbsolute),
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -34,6 +42,20 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }
 }).single('photo');
 
+const toAbsolutePath = (filePath) => {
+  if (!filePath) return null;
+  if (path.isAbsolute(filePath)) return filePath;
+  return path.join(process.cwd(), filePath);
+};
+
+const toPublicUploadPath = (absoluteFilePath) =>
+  path.posix.join(UPLOADS_RELATIVE_DIR, path.basename(absoluteFilePath));
+
+const removeFileIfExists = (filePath) => {
+  try {
+    const absolutePath = toAbsolutePath(filePath);
+    if (absolutePath && fs.existsSync(absolutePath)) {
+      fs.unlinkSync(absolutePath);
 const removeFileIfExists = (filePath) => {
   try {
     if (filePath && fs.existsSync(filePath)) {
@@ -128,7 +150,7 @@ exports.uploadPhoto = (req, res, next) => {
         userId: req.user.id,
         filename: path.basename(optimizedPath),
         originalName: req.file.originalname,
-        path: optimizedPath,
+        path: toPublicUploadPath(optimizedPath),
         mimeType: 'image/jpeg',
         size: fs.existsSync(optimizedPath) ? fs.statSync(optimizedPath).size : 0,
         location,
