@@ -15,6 +15,13 @@ if (!fs.existsSync(uploadsDirAbsolute)) {
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDirAbsolute),
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
     const safeName = file.originalname.replace(/\s+/g, '_');
     const ext = path.extname(safeName) || '.jpg';
@@ -50,17 +57,14 @@ const removeFileIfExists = (filePath) => {
     const absolutePath = toAbsolutePath(filePath);
     if (absolutePath && fs.existsSync(absolutePath)) {
       fs.unlinkSync(absolutePath);
+const removeFileIfExists = (filePath) => {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
     }
   } catch (e) {
     console.warn('Could not remove file:', e.message);
   }
-};
-
-const toObjectId = (value) => {
-  if (!value) return null;
-  if (value instanceof mongoose.Types.ObjectId) return value;
-  if (mongoose.Types.ObjectId.isValid(value)) return new mongoose.Types.ObjectId(value);
-  return null;
 };
 
 exports.uploadPhoto = (req, res, next) => {
@@ -143,16 +147,12 @@ exports.uploadPhoto = (req, res, next) => {
         }
       }
 
-      const storedMimeType = optimizedPath.endsWith('.jpg') || optimizedPath.endsWith('.jpeg')
-        ? 'image/jpeg'
-        : req.file.mimetype;
-
       const photo = await Photo.create({
         userId: req.user.id,
         filename: path.basename(optimizedPath),
         originalName: req.file.originalname,
         path: toPublicUploadPath(optimizedPath),
-        mimeType: storedMimeType,
+        mimeType: 'image/jpeg',
         size: fs.existsSync(optimizedPath) ? fs.statSync(optimizedPath).size : 0,
         location,
         gpsData,
@@ -238,10 +238,7 @@ exports.findPhotosByLocation = async (req, res, next) => {
 
 exports.getLocationStats = async (req, res, next) => {
   try {
-    const userObjectId = toObjectId(req.user?._id || req.user?.id);
-    if (!userObjectId) {
-      return res.status(400).json({ error: 'Invalid user id' });
-    }
+    const userObjectId = req.user._id || req.user.id;
     const stats = await Photo.aggregate([
       {
         $match: {
