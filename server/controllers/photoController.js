@@ -1,5 +1,6 @@
 const Photo = require('../models/Photo');
 const multer = require('multer');
+const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 const exifr = require('exifr');
