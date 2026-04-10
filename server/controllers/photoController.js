@@ -14,6 +14,13 @@ if (!fs.existsSync(uploadsDirAbsolute)) {
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDirAbsolute),
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
     const safeName = file.originalname.replace(/\s+/g, '_');
     const ext = path.extname(safeName) || '.jpg';
@@ -49,6 +56,10 @@ const removeFileIfExists = (filePath) => {
     const absolutePath = toAbsolutePath(filePath);
     if (absolutePath && fs.existsSync(absolutePath)) {
       fs.unlinkSync(absolutePath);
+const removeFileIfExists = (filePath) => {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
     }
   } catch (e) {
     console.warn('Could not remove file:', e.message);
